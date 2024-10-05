@@ -29,7 +29,7 @@ class Song(Base):
     genre = Column(String, nullable=True)
     duration = Column(Integer, nullable=False)  # Duration in seconds
     file_path = Column(String, nullable=False)  # should this be an upload file field?
-    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
+    created_at = Column(DateTime, default=datetime.utcnow)
     play_count = Column(Integer, default=0)
     theme = Column(String, nullable=True)
     style = Column(String, nullable=True)
@@ -116,3 +116,5 @@ class TTSVoice(Base):
     language = Column(String, nullable=False)
     gender = Column(String, nullable=True)
     model_type = Column(String, nullable=False)  # e.g., "Coqui TTS", "Piper"
+    model_name = Column(String, nullable=False)
+    generation_url = Column(String, nullable=False)
