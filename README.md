@@ -271,6 +271,6 @@ services:
 
 Music Flow Radio aims to revolutionize internet radio by leveraging AI to create a unique and engaging listening experience. This design document outlines the key components and development steps needed to bring this project to life. As development progresses, this document should be updated to reflect any changes or refinements to the overall design.
 
-## Note on Licensing
+## Note on Music Licensing
 
-All music broadcast on Music Flow Radio will be original content created by the project owner. This simplifies licensing concerns and allows for full control over the content and its presentation.
+Users of this must have rights to broadcast music. The software was developed because I wanted to listen to the music I create.
