@@ -1,8 +1,18 @@
-from flask import Blueprint, jsonify
+from flask import jsonify
+from . import create_app
 
-main = Blueprint("main", __name__)
+app = create_app()
 
 
-@main.route("/api/health")
+@app.route("/")
+def home():
+    return jsonify(message="Welcome to MusicFlowRadio!")
+
+
+@app.route("/api/health")
 def health_check():
     return jsonify({"status": "healthy"})
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

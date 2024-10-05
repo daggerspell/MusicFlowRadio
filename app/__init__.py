@@ -1,18 +1,19 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
-from config import Config
+from .models import Base
 
 db = SQLAlchemy()
 
 
 def create_app():
     app = Flask(__name__)
-    app.config.from_object(Config)
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///music_flow_radio.db"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
     db.init_app(app)
 
-    from app import routes
-
-    app.register_blueprint(routes.main)
+    with app.app_context():
+        # Create the tables in the database
+        db.create_all()
 
     return app
