@@ -28,9 +28,14 @@ class Song(Base):
     album = Column(String, nullable=True)
     genre = Column(String, nullable=True)
     duration = Column(Integer, nullable=False)  # Duration in seconds
-    file_path = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    file_path = Column(String, nullable=False)  # should this be an upload file field?
+    created_at = Column(DateTime, default=datetime.now(datetime.timezone.utc))
     play_count = Column(Integer, default=0)
+    theme = Column(String, nullable=True)
+    style = Column(String, nullable=True)
+    lyrics = Column(Text, nullable=True)
+    twitter_post = Column(String, nullable=True)
+    track_number = Column(Integer, nullable=True)
 
     play_histories = relationship("PlayHistory", back_populates="song")
     ai_contents = relationship("AIContent", back_populates="song")
