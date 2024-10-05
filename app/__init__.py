@@ -1,6 +1,5 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
-from .models import Base, Song
 from flask_migrate import Migrate
 
 db = SQLAlchemy()
@@ -15,9 +14,8 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
 
-    with app.app_context():
-        # Create the tables in the database
-        db.create_all()
+    # Import models here to avoid circular imports
+    from .models import Song
 
     @app.route("/", methods=["GET"])
     def home():
@@ -27,7 +25,7 @@ def create_app():
     def health_check():
         return jsonify(message="Health check successful!")
 
-    @app.route("/songs", methods=["POST"])
+    @app.route("/add_song", methods=["POST"])
     def add_song():
         data = request.get_json()
         new_song = Song(
@@ -43,6 +41,12 @@ def create_app():
     @app.route("/songs", methods=["GET"])
     def get_songs():
         songs = Song.query.all()
+        if len(songs) == 0:
+            return jsonify(message="No songs found")
         return jsonify([song.title for song in songs])
+
+    with app.app_context():
+        # Create the tables in the database
+        db.create_all()
 
     return app
