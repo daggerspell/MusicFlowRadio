@@ -157,49 +157,53 @@ class AIRadioStation:
             {
                 "name": "Nadya",
                 "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-                "start_time": "22:00",
-                "end_time": "05:00",
+                "shifts": [("22:00", "05:00"), ("00:00", "05:00")],
             },
             {
                 "name": "Guss",
                 "days": ["Wed", "Thu", "Fri", "Sat"],
-                "start_time": "16:00",
-                "end_time": "00:00",
+                "shifts": [("16:00", "00:00")],
+            },
+            {
+                "name": "Lenny",
+                "days": ["Wed", "Thu", "Fri", "Sat"],
+                "shifts": [("14:00", "16:00")],
             },
         ]
 
-        # Add Nadya's and Guss's shifts to the schedule
+        # Add Nadya's, Guss's, and Lenny's shifts to the schedule
         for host in hosts:
             for day in host["days"]:
-                start_time = datetime.strptime(host["start_time"], "%H:%M")
-                end_time_str = host["end_time"]
-                if end_time_str == "00:00":
-                    end_time_str = "00:00"
-                    end_time = datetime.strptime(end_time_str, "%H:%M") + timedelta(
-                        days=1
+                for shift in host["shifts"]:
+                    start_time = datetime.strptime(shift[0], "%H:%M")
+                    end_time_str = shift[1]
+                    if end_time_str == "00:00":
+                        end_time_str = "00:00"
+                        end_time = datetime.strptime(end_time_str, "%H:%M") + timedelta(
+                            days=1
+                        )
+                    else:
+                        end_time = datetime.strptime(end_time_str, "%H:%M")
+                    if end_time < start_time:
+                        end_time += timedelta(days=1)
+                    self.cursor.execute(
+                        """
+                        INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
+                        VALUES (?, ?, ?, ?)
+                    """,
+                        (
+                            host["name"],
+                            start_time.strftime("%H:%M:%S"),
+                            end_time.strftime("%H:%M:%S"),
+                            day,
+                        ),
                     )
-                else:
-                    end_time = datetime.strptime(end_time_str, "%H:%M")
-                if end_time < start_time:
-                    end_time += timedelta(days=1)
-                self.cursor.execute(
-                    """
-                    INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
-                    VALUES (?, ?, ?, ?)
-                """,
-                    (
-                        host["name"],
-                        start_time.strftime("%H:%M:%S"),
-                        end_time.strftime("%H:%M:%S"),
-                        day,
-                    ),
-                )
-                self.conn.commit()
+                    self.conn.commit()
 
         # Define remaining hours for Jules and Lenny
         remaining_hours = [
             {"start_time": "05:00", "end_time": "10:00"},
-            {"start_time": "10:00", "end_time": "16:00"},
+            {"start_time": "10:00", "end_time": "14:00"},
             {"start_time": "16:00", "end_time": "22:00"},
         ]
 
