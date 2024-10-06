@@ -15,6 +15,8 @@ from elevenlabs import Voice, VoiceSettings, save
 from elevenlabs.client import ElevenLabs
 from collections import deque
 import threading
+from objects.Personality import Nadya, Guss, Jules, Lenny
+from datetime import datetime, timedelta
 
 
 class AIRadioStation:
@@ -23,6 +25,13 @@ class AIRadioStation:
         self.commercials: List[Commercial] = []
         self.playlist_queue: deque = deque()
         self.queue_lock = threading.Lock()
+        self.host_schedule: List[Dict] = []
+        self.hosts = {
+            "Nadya": Nadya(),
+            "Guss": Guss(),
+            "Jules": Jules(),
+            "Lenny": Lenny(),
+        }
         # Load from .env file OPENAI_API_KEY
         load_dotenv()
         # client = Open(api_key=os.getenv("OPENAI_API_KEY"))
@@ -35,6 +44,8 @@ class AIRadioStation:
         self.cursor = self.conn.cursor()
         self.create_tables()
         self.load_data()
+        self.generate_host_schedule()
+        self.current_host = self.get_current_host()
 
     def create_tables(self):
         self.cursor.execute(
@@ -71,6 +82,17 @@ class AIRadioStation:
             )
         """
         )
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS host_schedule (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                host_name TEXT,
+                start_time TEXT,
+                end_time TEXT,
+                day_of_week TEXT
+            )
+        """
+        )
         self.conn.commit()
 
     def load_data(self):
@@ -88,14 +110,171 @@ class AIRadioStation:
             name, file_path = commercial
             self.commercials.append(Commercial(name, file_path))
 
-        self.cursor.execute("SELECT * FROM intros WHERE archived = 0")
+        current_host = self.get_current_host()
+        if current_host:
+            self.cursor.execute(
+                "SELECT * FROM intros WHERE archived = 0 AND host_name = ?",
+                (current_host,),
+            )
+        else:
+            self.cursor.execute("SELECT * FROM intros WHERE archived = 0")
+
         intros = self.cursor.fetchall()
         for intro in intros:
-            _, song_title, intro_text, intro_file_path, play_count, archived = intro
+            (
+                _,
+                song_title,
+                intro_text,
+                intro_file_path,
+                play_count,
+                archived,
+                host_name,
+            ) = intro
             if song_title in self.music_library:
                 self.music_library[song_title].previous_intros.append(
-                    (intro_text, intro_file_path, play_count)
+                    (intro_text, intro_file_path, play_count, host_name)
                 )
+
+        self.cursor.execute("SELECT * FROM host_schedule")
+        schedule = self.cursor.fetchall()
+        for entry in schedule:
+            _, host_name, start_time, end_time, day_of_week = entry
+            self.host_schedule.append(
+                {
+                    "host_name": host_name,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                    "day_of_week": day_of_week,
+                }
+            )
+
+    def generate_host_schedule(self):
+        # Clear existing schedule
+        self.cursor.execute("DELETE FROM host_schedule")
+
+        # Define host schedules
+        hosts = [
+            {
+                "name": "Nadya",
+                "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                "start_time": "22:00",
+                "end_time": "05:00",
+            },
+            {
+                "name": "Guss",
+                "days": ["Wed", "Thu", "Fri", "Sat"],
+                "start_time": "16:00",
+                "end_time": "00:00",
+            },
+        ]
+
+        # Add Nadya's and Guss's shifts to the schedule
+        for host in hosts:
+            for day in host["days"]:
+                start_time = datetime.strptime(host["start_time"], "%H:%M")
+                end_time_str = host["end_time"]
+                if end_time_str == "00:00":
+                    end_time_str = "00:00"
+                    end_time = datetime.strptime(end_time_str, "%H:%M") + timedelta(
+                        days=1
+                    )
+                else:
+                    end_time = datetime.strptime(end_time_str, "%H:%M")
+                if end_time < start_time:
+                    end_time += timedelta(days=1)
+                self.cursor.execute(
+                    """
+                    INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
+                    VALUES (?, ?, ?, ?)
+                """,
+                    (
+                        host["name"],
+                        start_time.strftime("%H:%M:%S"),
+                        end_time.strftime("%H:%M:%S"),
+                        day,
+                    ),
+                )
+                self.conn.commit()
+
+        # Define remaining hours for Jules and Lenny
+        remaining_hours = [
+            {"start_time": "05:00", "end_time": "10:00"},
+            {"start_time": "10:00", "end_time": "16:00"},
+            {"start_time": "16:00", "end_time": "22:00"},
+        ]
+
+        # Assign Jules and Lenny's shifts
+        for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+            for i, hours in enumerate(remaining_hours):
+                start_time = datetime.strptime(hours["start_time"], "%H:%M")
+                end_time = datetime.strptime(hours["end_time"], "%H:%M")
+                if end_time < start_time:
+                    end_time += timedelta(days=1)
+
+                # Check if the time slot is already covered
+                self.cursor.execute(
+                    """
+                    SELECT COUNT(*) FROM host_schedule
+                    WHERE day_of_week = ? AND (
+                        (start_time <= ? AND end_time > ?) OR
+                        (start_time < ? AND end_time >= ?)
+                    )
+                """,
+                    (
+                        day,
+                        start_time.strftime("%H:%M:%S"),
+                        start_time.strftime("%H:%M:%S"),
+                        end_time.strftime("%H:%M:%S"),
+                        end_time.strftime("%H:%M:%S"),
+                    ),
+                )
+                count = self.cursor.fetchone()[0]
+                if count == 0:
+                    # Alternate between Jules and Lenny
+                    host_name = "Lenny" if i % 2 == 0 else "Jules"
+                    self.cursor.execute(
+                        """
+                        INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
+                        VALUES (?, ?, ?, ?)
+                    """,
+                        (
+                            host_name,
+                            start_time.strftime("%H:%M:%S"),
+                            end_time.strftime("%H:%M:%S"),
+                            day,
+                        ),
+                    )
+                    self.conn.commit()
+
+    def get_current_host(self):
+        # This should return the personality object of the current host
+        now = datetime.now()
+        current_time = now.time()
+        current_day = now.strftime("%a")
+        previous_day = (now - timedelta(days=1)).strftime("%a")
+
+        # print(f"Current time: {current_time}, Current day: {current_day}")
+        # print(f"Host schedule: {self.host_schedule}")
+
+        for entry in self.host_schedule:
+            start_time = datetime.strptime(entry["start_time"], "%H:%M:%S").time()
+            end_time = datetime.strptime(entry["end_time"], "%H:%M:%S").time()
+
+            # Check if the current time falls within the shift
+            if entry["day_of_week"] == current_day:
+                if start_time <= end_time:
+                    if start_time <= current_time <= end_time:
+                        return self.hosts.get(entry["host_name"])
+                else:  # Overnight shift
+                    if current_time >= start_time or current_time <= end_time:
+                        return self.hosts.get(entry["host_name"])
+
+            # Check if the current time falls within an overnight shift from the previous day
+            if entry["day_of_week"] == previous_day and start_time > end_time:
+                if current_time <= end_time:
+                    return self.hosts.get(entry["host_name"])
+
+        return None
 
     def add_song(self, file_path: str):
         song_info = self.extract_song_info(file_path)
@@ -198,17 +377,26 @@ class AIRadioStation:
         self.conn.commit()
 
     def generate_ai_speech(
-        self, prompt: str, song: Song, include_dark_joke: bool = False
+        self, prompt: str, song: Song, include_dark_joke: bool, cursor, conn
     ):
-        if len(song.previous_intros) >= 5:
-            intro_text, intro_file_path, play_count = random.choice(
-                song.previous_intros
+        current_host = self.get_current_host()
+        if not current_host:
+            raise ValueError("No current host found")
+
+        # Filter intros to only include those from the current host
+        host_specific_intros = [
+            intro for intro in song.previous_intros if intro[3] == current_host.name
+        ]
+
+        if len(host_specific_intros) >= 3:
+            intro_text, intro_file_path, play_count, host_name = random.choice(
+                host_specific_intros
             )
             print(f"Using existing intro: {intro_text}")
 
             # Increment play count
             play_count += 1
-            self.cursor.execute(
+            cursor.execute(
                 """
                 UPDATE intros
                 SET play_count = ?
@@ -216,11 +404,11 @@ class AIRadioStation:
             """,
                 (play_count, intro_file_path),
             )
-            self.conn.commit()
+            conn.commit()
 
-            # Archive intro if it has been played 10 times
-            if play_count >= 10:
-                self.cursor.execute(
+            # Archive intro if it has been played 20 times
+            if play_count >= 20:
+                cursor.execute(
                     """
                     UPDATE intros
                     SET archived = 1
@@ -228,7 +416,7 @@ class AIRadioStation:
                 """,
                     (intro_file_path,),
                 )
-                self.conn.commit()
+                conn.commit()
                 song.previous_intros = [
                     intro
                     for intro in song.previous_intros
@@ -238,16 +426,11 @@ class AIRadioStation:
             return intro_file_path
 
         previous_intros = ", ".join(
-            [intro[0] for intro in song.previous_intros[-3:]]
+            [intro[0] for intro in host_specific_intros[-3:]]
         )  # Last 3 intros for context
 
-        system_message = (
-            "You are Nadya Nadell 'The Russian Mistress' a radio DJ for DSFM (Dagger Spell FM), which only plays music by the artist 'Dagger Spell'. "
-            "Your introductions should be short and witty, and occasionally include dark humor related to the next song's subject."
-            "You are known for your gothic style and seductive word play."
-            "You speak in Russian, and English with a Russian accent."
-            "Avoid repeating previous introductions."
-        )
+        print(f"Current host: {current_host.name}")
+        system_message = current_host.system_message
 
         user_message = (
             f"Introduce the song '{song.title}' by {song.artist}. "
@@ -265,10 +448,6 @@ class AIRadioStation:
         response = self.client.chat(
             model="llama3.2:latest", messages=messages, stream=False
         )
-        # response = client.chat.completions.create(
-        #     model="gpt-4o-mini", messages=messages, max_tokens=150
-        # )
-        # intro_text = response.choices[0].message.content.strip()
         intro_text = response["message"]["content"]
         print(f"AI: {intro_text}")
 
@@ -277,16 +456,16 @@ class AIRadioStation:
         intro_file_path = self.text_to_speech(
             intro_text, f"intros/{song.title}_{timestamp}.mp3"
         )
-        song.previous_intros.append((intro_text, intro_file_path, 0))
+        song.previous_intros.append((intro_text, intro_file_path, 0, current_host.name))
 
-        self.cursor.execute(
+        cursor.execute(
             """
-            INSERT INTO intros (song_title, intro_text, intro_file_path, play_count)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO intros (song_title, intro_text, intro_file_path, play_count, host_name)
+            VALUES (?, ?, ?, ?, ?)
         """,
-            (song.title, intro_text, intro_file_path, 0),
+            (song.title, intro_text, intro_file_path, 0, current_host.name),
         )
-        self.conn.commit()
+        conn.commit()
 
         return intro_file_path
 
@@ -297,7 +476,7 @@ class AIRadioStation:
         # use elevenlabs API for text to speech
         data = self.tts.generate(
             text=text,
-            voice=Voice(voice_id="GCPLhb1XrVwcoKUJYcvz"),
+            voice=Voice(voice_id=self.get_current_host().voice_id),
             model="eleven_multilingual_v2",
         )
         # raise the pitch of the voice by 2 semitones
@@ -320,6 +499,10 @@ class AIRadioStation:
             pygame.time.Clock().tick(10)
 
     def build_playlist(self):
+        # Create a new SQLite connection and cursor for this thread
+        conn = sqlite3.connect("musicflowradio.db")
+        cursor = conn.cursor()
+
         while True:
             with self.queue_lock:
                 if (
@@ -337,7 +520,11 @@ class AIRadioStation:
                             random.random() < 0.2
                         )  # 20% chance for a dark joke
                         intro_file_path = self.generate_ai_speech(
-                            f"Introduce the song {song.title}", song, include_dark_joke
+                            f"Introduce the song {song.title}",
+                            song,
+                            include_dark_joke,
+                            cursor,
+                            conn,
                         )
                         self.playlist_queue.append(intro_file_path)
                         self.playlist_queue.append(song.file_path)
@@ -347,6 +534,9 @@ class AIRadioStation:
                             commercial = random.choice(self.commercials)
                             self.playlist_queue.append(commercial.file_path)
             time.sleep(1)  # Sleep for a short time before checking the queue again
+
+        # Close the connection when done
+        conn.close()
 
     def run_station(self):
         playlist_thread = threading.Thread(target=self.build_playlist)
