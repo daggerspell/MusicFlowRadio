@@ -46,6 +46,7 @@ class AIRadioStation:
         self.load_data()
         self.generate_host_schedule()
         self.current_host = self.get_current_host()
+        self.generate_and_store_show_intros()
 
     def create_tables(self):
         self.cursor.execute(
@@ -78,6 +79,7 @@ class AIRadioStation:
                 intro_file_path TEXT,
                 play_count INTEGER DEFAULT 0,
                 archived INTEGER DEFAULT 0,
+                host_name TEXT,
                 FOREIGN KEY(song_title) REFERENCES songs(title)
             )
         """
@@ -90,6 +92,18 @@ class AIRadioStation:
                 start_time TEXT,
                 end_time TEXT,
                 day_of_week TEXT
+            )
+        """
+        )
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS show_intros (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                host_name TEXT,
+                show_name TEXT,
+                intro_text TEXT,
+                audio_file_path TEXT,
+                created_at TIMESTAMP
             )
         """
         )
@@ -149,106 +163,110 @@ class AIRadioStation:
             )
 
     def generate_host_schedule(self):
-        # Clear existing schedule
-        self.cursor.execute("DELETE FROM host_schedule")
+        # get the schedule from the database and store it in the host_schedule list
+        self.cursor.execute("SELECT * FROM host_schedule")
+        schedule = self.cursor.fetchall()
 
-        # Define host schedules
-        hosts = [
-            {
-                "name": "Nadya",
-                "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-                "shifts": [("22:00", "05:00"), ("00:00", "05:00")],
-            },
-            {
-                "name": "Guss",
-                "days": ["Wed", "Thu", "Fri", "Sat"],
-                "shifts": [("16:00", "00:00")],
-            },
-            {
-                "name": "Lenny",
-                "days": ["Wed", "Thu", "Fri", "Sat"],
-                "shifts": [("14:00", "16:00")],
-            },
-        ]
+        # # Clear existing schedule
+        # self.cursor.execute("DELETE FROM host_schedule")
 
-        # Add Nadya's, Guss's, and Lenny's shifts to the schedule
-        for host in hosts:
-            for day in host["days"]:
-                for shift in host["shifts"]:
-                    start_time = datetime.strptime(shift[0], "%H:%M")
-                    end_time_str = shift[1]
-                    if end_time_str == "00:00":
-                        end_time_str = "00:00"
-                        end_time = datetime.strptime(end_time_str, "%H:%M") + timedelta(
-                            days=1
-                        )
-                    else:
-                        end_time = datetime.strptime(end_time_str, "%H:%M")
-                    if end_time < start_time:
-                        end_time += timedelta(days=1)
-                    self.cursor.execute(
-                        """
-                        INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
-                        VALUES (?, ?, ?, ?)
-                    """,
-                        (
-                            host["name"],
-                            start_time.strftime("%H:%M:%S"),
-                            end_time.strftime("%H:%M:%S"),
-                            day,
-                        ),
-                    )
-                    self.conn.commit()
+        # # Define host schedules
+        # hosts = [
+        #     {
+        #         "name": "Nadya",
+        #         "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+        #         "shifts": [("22:00", "05:00"), ("00:00", "05:00")],
+        #     },
+        #     {
+        #         "name": "Guss",
+        #         "days": ["Wed", "Thu", "Fri", "Sat"],
+        #         "shifts": [("16:00", "00:00")],
+        #     },
+        #     {
+        #         "name": "Lenny",
+        #         "days": ["Wed", "Thu", "Fri", "Sat"],
+        #         "shifts": [("14:00", "16:00")],
+        #     },
+        # ]
 
-        # Define remaining hours for Jules and Lenny
-        remaining_hours = [
-            {"start_time": "05:00", "end_time": "10:00"},
-            {"start_time": "10:00", "end_time": "14:00"},
-            {"start_time": "16:00", "end_time": "22:00"},
-        ]
+        # # Add Nadya's, Guss's, and Lenny's shifts to the schedule
+        # for host in hosts:
+        #     for day in host["days"]:
+        #         for shift in host["shifts"]:
+        #             start_time = datetime.strptime(shift[0], "%H:%M")
+        #             end_time_str = shift[1]
+        #             if end_time_str == "00:00":
+        #                 end_time_str = "00:00"
+        #                 end_time = datetime.strptime(end_time_str, "%H:%M") + timedelta(
+        #                     days=1
+        #                 )
+        #             else:
+        #                 end_time = datetime.strptime(end_time_str, "%H:%M")
+        #             if end_time < start_time:
+        #                 end_time += timedelta(days=1)
+        #             self.cursor.execute(
+        #                 """
+        #                 INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
+        #                 VALUES (?, ?, ?, ?)
+        #             """,
+        #                 (
+        #                     host["name"],
+        #                     start_time.strftime("%H:%M:%S"),
+        #                     end_time.strftime("%H:%M:%S"),
+        #                     day,
+        #                 ),
+        #             )
+        #             self.conn.commit()
 
-        # Assign Jules and Lenny's shifts
-        for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
-            for i, hours in enumerate(remaining_hours):
-                start_time = datetime.strptime(hours["start_time"], "%H:%M")
-                end_time = datetime.strptime(hours["end_time"], "%H:%M")
-                if end_time < start_time:
-                    end_time += timedelta(days=1)
+        # # Define remaining hours for Jules and Lenny
+        # remaining_hours = [
+        #     {"start_time": "05:00", "end_time": "10:00"},
+        #     {"start_time": "10:00", "end_time": "14:00"},
+        #     {"start_time": "16:00", "end_time": "22:00"},
+        # ]
 
-                # Check if the time slot is already covered
-                self.cursor.execute(
-                    """
-                    SELECT COUNT(*) FROM host_schedule
-                    WHERE day_of_week = ? AND (
-                        (start_time <= ? AND end_time > ?) OR
-                        (start_time < ? AND end_time >= ?)
-                    )
-                """,
-                    (
-                        day,
-                        start_time.strftime("%H:%M:%S"),
-                        start_time.strftime("%H:%M:%S"),
-                        end_time.strftime("%H:%M:%S"),
-                        end_time.strftime("%H:%M:%S"),
-                    ),
-                )
-                count = self.cursor.fetchone()[0]
-                if count == 0:
-                    # Alternate between Jules and Lenny
-                    host_name = "Lenny" if i % 2 == 0 else "Jules"
-                    self.cursor.execute(
-                        """
-                        INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
-                        VALUES (?, ?, ?, ?)
-                    """,
-                        (
-                            host_name,
-                            start_time.strftime("%H:%M:%S"),
-                            end_time.strftime("%H:%M:%S"),
-                            day,
-                        ),
-                    )
-                    self.conn.commit()
+        # # Assign Jules and Lenny's shifts
+        # for day in ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]:
+        #     for i, hours in enumerate(remaining_hours):
+        #         start_time = datetime.strptime(hours["start_time"], "%H:%M")
+        #         end_time = datetime.strptime(hours["end_time"], "%H:%M")
+        #         if end_time < start_time:
+        #             end_time += timedelta(days=1)
+
+        #         # Check if the time slot is already covered
+        #         self.cursor.execute(
+        #             """
+        #             SELECT COUNT(*) FROM host_schedule
+        #             WHERE day_of_week = ? AND (
+        #                 (start_time <= ? AND end_time > ?) OR
+        #                 (start_time < ? AND end_time >= ?)
+        #             )
+        #         """,
+        #             (
+        #                 day,
+        #                 start_time.strftime("%H:%M:%S"),
+        #                 start_time.strftime("%H:%M:%S"),
+        #                 end_time.strftime("%H:%M:%S"),
+        #                 end_time.strftime("%H:%M:%S"),
+        #             ),
+        #         )
+        #         count = self.cursor.fetchone()[0]
+        #         if count == 0:
+        #             # Alternate between Jules and Lenny
+        #             host_name = "Lenny" if i % 2 == 0 else "Jules"
+        #             self.cursor.execute(
+        #                 """
+        #                 INSERT INTO host_schedule (host_name, start_time, end_time, day_of_week)
+        #                 VALUES (?, ?, ?, ?)
+        #             """,
+        #                 (
+        #                     host_name,
+        #                     start_time.strftime("%H:%M:%S"),
+        #                     end_time.strftime("%H:%M:%S"),
+        #                     day,
+        #                 ),
+        #             )
+        #             self.conn.commit()
 
     def get_current_host(self):
         # This should return the personality object of the current host
@@ -473,14 +491,67 @@ class AIRadioStation:
 
         return intro_file_path
 
-    def text_to_speech(self, text: str, file_path: str = "ai_speech.mp3"):
+    def generate_and_store_show_intros(self):
+        # Ensure the show_intros directory exists
+        os.makedirs("show_intros", exist_ok=True)
+
+        for personality in self.hosts.values():
+            # Check if there is already a show intro for this personality
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM show_intros WHERE host_name = ?",
+                (personality.name,),
+            )
+            count = self.cursor.fetchone()[0]
+            if count == 0:
+                # Generate show intro
+                # this can't be done on the personailty class as it needs to be done on the radio station class
+                messages = [
+                    {"role": "system", "content": personality.system_message},
+                    {
+                        "role": "user",
+                        "content": f"{personality.name}, Generate a show intro for you and your show {personality.show_name}.",
+                    },
+                ]
+
+                show_intro_response = self.client.chat(
+                    model=personality.model, messages=messages, stream=False
+                )
+
+                intro_text = show_intro_response["message"]["content"]
+                timestamp = int(time.time())
+                audio_file_path = f"show_intros/{personality.name}-{personality.show_name}_{timestamp}.mp3"
+
+                # Generate the audio file
+                self.text_to_speech(intro_text, audio_file_path, personality.voice_id)
+
+                # Store the intro in the database
+                self.cursor.execute(
+                    """
+                    INSERT INTO show_intros (host_name, show_name, intro_text, audio_file_path, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """,
+                    (
+                        personality.name,
+                        personality.show_name,
+                        intro_text,
+                        audio_file_path,
+                        datetime.now(),
+                    ),
+                )
+                self.conn.commit()
+
+    def text_to_speech(
+        self, text: str, file_path: str = "ai_speech.mp3", voice_id: str = None
+    ):
         # Ensure the directory exists
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        if voice_id is None:
+            voice_id = self.current_host.voice_id
 
         # use elevenlabs API for text to speech
         data = self.tts.generate(
             text=text,
-            voice=Voice(voice_id=self.get_current_host().voice_id),
+            voice=Voice(voice_id=voice_id),
             model="eleven_multilingual_v2",
         )
         # raise the pitch of the voice by 2 semitones

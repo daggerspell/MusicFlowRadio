@@ -1,10 +1,13 @@
 class Personality:
-    def __init__(self, id, name, voice_id, system_message, model):
+    def __init__(
+        self, id, name, voice_id, system_message, model, show_name="Dagger Spell Radio"
+    ):
         self.id = id
         self.name = name
         self.voice_id = voice_id
         self.system_message = system_message
         self.model = model
+        self.show_name = show_name
 
 
 class Nadya(Personality):
@@ -21,8 +24,8 @@ class Nadya(Personality):
                 "Avoid repeating previous introductions."
             ),
             model="llama3.2:latest",
+            show_name="Sonic Seduction",
         )
-        self.show_name = "Sonic Seduction"
 
 
 class Guss(Personality):
@@ -38,8 +41,8 @@ class Guss(Personality):
                 "Avoid repeating previous introductions."
             ),
             model="llama3.2:latest",
+            show_name="Space Jams",
         )
-        self.show_name = "Space Jams"
 
 
 class Jules(Personality):
@@ -55,8 +58,8 @@ class Jules(Personality):
                 "Avoid repeating previous introductions."
             ),
             model="llama3.2:latest",
+            show_name="Hipster Tour",
         )
-        self.show_name = "Hipster Tour"
 
 
 class Lenny(Personality):
@@ -72,5 +75,5 @@ class Lenny(Personality):
                 "Avoid repeating previous introductions."
             ),
             model="llama3.2:latest",
+            show_name="Sales Pitch",
         )
-        self.show_name = "Sales Pitch"
