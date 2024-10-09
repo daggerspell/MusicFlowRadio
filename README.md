@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Music Flow Radio is an AI-powered internet streaming radio service. It uses AI to generate engaging introductions for songs, create a dynamic playlist, and even produce AI-generated commercials. This project aims to transform the proof-of-concept local radio station into a full-fledged web-based streaming service.
+Music Flow Radio is an AI-powered internet streaming radio service. It uses AI to generate engaging introductions for songs, create dynamic playlists, and even produce AI-generated commercials. This project aims to create a full-fledged web-based streaming service, moving beyond the initial proof-of-concept.
 
 ## System Architecture
 
@@ -10,24 +10,26 @@ The system will consist of the following components:
 
 1. **Backend (Flask)**
 
-   - Handles audio streaming
+   - Handles audio streaming using Icecast or a similar free solution
    - Manages the playlist and song database
-   - Integrates with many LLMs for AI-generated content
-     - Ollama
-     - OpenAI
-     - Anthropic
-     - More to come!
+   - Integrates with multiple LLMs for AI-generated content
    - Provides RESTful API for frontend communication
+   - Implements DJ scheduling system
+   - Manages DJ-specific playlist building
+   - Records detailed play history
 
 2. **Frontend (React)**
 
-   - User interface for listeners and admins alike
+   - Web-based user interface for listeners and admins
    - Admin panel for managing songs, playlists, and station settings
    - Real-time display of current song and AI-generated introductions
+   - DJ management interface
 
 3. **Database (SQLite)**
 
    - Stores song metadata, playlists, and user information
+   - Maintains DJ schedules and preferences
+   - Records detailed play history
 
 4. **Audio Processing**
 
@@ -36,10 +38,11 @@ The system will consist of the following components:
 5. **AI Integration**
 
    - Generates song introductions and commercial content
-   - Text-to-Speech for natural-sounding DJ voice
+   - Creates DJ-specific content, including show intros and outros
+   - Text-to-Speech for natural-sounding DJ voices
 
 6. **Streaming Server**
-   - Broadcasts audio stream to listeners
+   - Broadcasts audio stream to listeners using Icecast or similar
 
 ## Detailed Component Design
 
@@ -49,8 +52,11 @@ The system will consist of the following components:
 
 - RESTful API for song management, playlist creation, and station control
 - WebSocket for real-time updates (current song, listener count)
-- Integrates with many LLMs for AI-generated content
+- Integration with multiple LLMs for AI-generated content
 - Audio file processing and streaming
+- DJ scheduling system
+- DJ-specific playlist building
+- Detailed play history recording
 
 #### Main Routes:
 
@@ -58,6 +64,8 @@ The system will consist of the following components:
 - `/api/playlists` - Manage playlists
 - `/api/stream` - Audio streaming endpoint
 - `/api/station` - Station control (start, stop, skip)
+- `/api/djs` - Manage DJ schedules and preferences
+- `/api/history` - Access play history
 
 #### Libraries:
 
@@ -66,28 +74,32 @@ The system will consist of the following components:
 - Flask-SocketIO
 - SQLAlchemy
 - PyDub
+- Icecast-py (or similar for streaming)
 
 ### 2. Frontend (React)
 
 #### Key Features:
 
-- Responsive design for desktop and mobile
+- Responsive web-based design for desktop and mobile
 - Real-time display of current song and next up
 - User authentication for admin features
 - Admin panel for song and playlist management
+- DJ management interface
+- Station analytics and history viewer
 
 #### Main Components:
 
 - `Player` - Audio player with controls
 - `NowPlaying` - Displays current song and AI introduction
 - `Playlist` - Shows upcoming songs
-- `Admin` - Song and playlist management interface
+- `Admin` - Song, playlist, and DJ management interface
+- `Analytics` - Display station statistics and play history
 
 #### Libraries:
 
 - React
 - Redux for state management
-- Material-UI for styling
+- Material-UI or Tailwind CSS for styling
 - Axios for API calls
 
 ### 3. Database (SQLite)
@@ -97,6 +109,9 @@ The system will consist of the following components:
 - `Songs` - Stores song metadata
 - `Playlists` - Manages playlists
 - `Users` - User authentication for admin access
+- `DJs` - Stores DJ information and preferences
+- `Schedules` - Manages DJ schedules
+- `PlayHistory` - Records detailed play history
 
 #### Schema (simplified):
 
@@ -115,7 +130,9 @@ CREATE TABLE Songs (
 CREATE TABLE Playlists (
     id INTEGER PRIMARY KEY,
     name TEXT,
-    songs TEXT  -- JSON string of song IDs
+    dj_id INTEGER,
+    songs TEXT,  -- JSON string of song IDs
+    FOREIGN KEY(dj_id) REFERENCES DJs(id)
 );
 
 CREATE TABLE Users (
@@ -124,103 +141,71 @@ CREATE TABLE Users (
     password_hash TEXT,
     is_admin BOOLEAN
 );
+
+CREATE TABLE DJs (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    voice_id TEXT,
+    show_name TEXT,
+    preferences TEXT  -- JSON string of DJ preferences
+);
+
+CREATE TABLE Schedules (
+    id INTEGER PRIMARY KEY,
+    dj_id INTEGER,
+    day_of_week TEXT,
+    start_time TEXT,
+    end_time TEXT,
+    FOREIGN KEY(dj_id) REFERENCES DJs(id)
+);
+
+CREATE TABLE PlayHistory (
+    id INTEGER PRIMARY KEY,
+    file_path TEXT,
+    dj_id INTEGER,
+    start_time DATETIME,
+    duration INTEGER,
+    FOREIGN KEY(dj_id) REFERENCES DJs(id)
+);
 ```
 
 ### 4. Audio Processing
 
 - Use PyDub for audio file manipulation
-- Implement a custom audio streaming solution or integrate with existing libraries
+- Implement streaming solution using Icecast or similar free alternative
 
 ### 5. AI Integration
 
 #### Language Models (LLMs)
 
-- To reduce cost during development, we will initially use Ollama
-- After initial product development is complete, we will add other LLMs as soon as possible:
+- Initially use Ollama for development
+- Plan to add support for:
   - OpenAI
   - Anthropic
-  - More to come!
+  - Other LLMs as needed
 
 #### Text-to-Speech (TTS)
 
-- For a more natural-sounding DJ voice, we will incorporate various TTS options:
-  - Initially: OpenVoice2 TTS hosted locally with a Gradio frontend
-  - Future additions:
-    - ElevenLabs
-    - Other high-quality TTS services
+- Initially: OpenVoice2 TTS hosted locally
+- Future additions:
+  - ElevenLabs
+  - Other high-quality TTS services
 
 #### Integration Strategy
 
-- Implement a modular design to easily switch between different LLMs and TTS services
-- Develop a caching mechanism to reduce API calls and improve performance
-- Create a fallback system to ensure continuous operation if a primary service is unavailable
+- Modular design for easy switching between LLMs and TTS services
+- Caching mechanism to reduce API calls
+- Fallback system for service unavailability
 
-#### Cost Management
+#### DJ-Specific Content
 
-- Implement usage tracking and limits for third-party services
-- Optimize prompt engineering to reduce token usage with LLMs
-- Explore batch processing for TTS generation during low-usage periods
-
-#### Customization
-
-- Allow admin users to select preferred LLM and TTS combinations for different types of content
-- Implement voice customization options where available (e.g., pitch, speed, emotion)
-
-#### Future Enhancements
-
-- Explore multi-modal AI models for generating accompanying visuals or sound effects
-- Implement AI-driven content scheduling and playlist generation based on listener preferences and trends
+- Generate show intros and outros
+- Create personalized song introductions based on DJ preferences
 
 ### 6. Streaming Server
 
-- Implement using Flask-SocketIO or a dedicated streaming server like Icecast
-
-## Docker Configuration
-
-Create separate containers for:
-
-1. Flask backend
-2. React frontend
-3. SQLite database
-4. Streaming server
-
-Docker-compose file to orchestrate the containers:
-
-```yaml
-version: "3"
-services:
-  backend:
-    build: ./backend
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./backend:/app
-    environment:
-      - FLASK_ENV=development
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-    depends_on:
-      - backend
-
-  database:
-    image: keinos/sqlite3
-    volumes:
-      - ./data:/data
-
-  streaming:
-    image: moul/icecast
-    ports:
-      - "8000:8000"
-    environment:
-      - ICECAST_SOURCE_PASSWORD=${ICECAST_SOURCE_PASSWORD}
-      - ICECAST_ADMIN_PASSWORD=${ICECAST_ADMIN_PASSWORD}
-```
+- Implement using Icecast or similar free streaming solution
+- Ensure compatibility with various client players
 
 ## Development Roadmap
 
@@ -241,7 +226,7 @@ services:
 
 3. **Phase 3: Streaming and Audio Processing**
 
-   - Implement or integrate a streaming solution
+   - Implement or integrate a streaming solution (Icecast)
    - Develop audio processing pipeline for seamless playback
 
 4. **Phase 4: AI Integration and Optimization**
@@ -250,27 +235,39 @@ services:
    - Refine AI-generated content
    - Implement caching and optimization strategies
 
-5. **Phase 5: Docker and Deployment**
+5. **Phase 5: DJ System Implementation**
 
-   - Create Dockerfiles for each component
-   - Develop docker-compose configuration
-   - Set up CI/CD pipeline for automated deployment
+   - Develop DJ scheduling system
+   - Implement DJ-specific playlist building
+   - Create show intro and outro generation
 
-6. **Phase 6: Testing and Refinement**
+6. **Phase 6: History and Analytics**
+
+   - Implement detailed play history recording
+   - Develop basic analytics features
+
+7. **Phase 7: Testing and Refinement**
 
    - Conduct thorough testing of all components
    - Optimize performance and user experience
    - Gather user feedback and iterate on the design
 
-7. **Phase 7: Launch and Monitoring**
+8. **Phase 8: Launch and Monitoring**
    - Deploy to production environment
    - Set up monitoring and logging
    - Develop a plan for ongoing maintenance and updates
 
+## Future Enhancements
+
+- Integration with popular streaming services for user requests
+- Advanced analytics and listener engagement features
+- Mobile app for listeners
+- AI-driven content scheduling based on listener preferences
+
 ## Conclusion
 
-Music Flow Radio aims to revolutionize internet radio by leveraging AI to create a unique and engaging listening experience. This design document outlines the key components and development steps needed to bring this project to life. As development progresses, this document should be updated to reflect any changes or refinements to the overall design.
+Music Flow Radio aims to create a unique and engaging internet radio experience by leveraging AI technology and personalized DJ content. This README outlines the key components and development steps needed to bring this project to life. As development progresses, this document should be updated to reflect any changes or refinements to the overall design.
 
 ## Note on Music Licensing
 
-Users of this must have rights to broadcast music. The software was developed because I wanted to listen to the music I create.
+Users of this software must have rights to broadcast music. The software was developed for personal use with self-created music.

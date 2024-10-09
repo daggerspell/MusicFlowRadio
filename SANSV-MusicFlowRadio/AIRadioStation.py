@@ -15,7 +15,7 @@ from elevenlabs import Voice, VoiceSettings, save
 from elevenlabs.client import ElevenLabs
 from collections import deque
 import threading
-from objects.Personality import Nadya, Guss, Jules, Lenny
+from objects.Personality import Nadya, Guss, Jules, Lenny, Perta
 from datetime import datetime, timedelta
 
 
@@ -31,6 +31,7 @@ class AIRadioStation:
             "Guss": Guss(),
             "Jules": Jules(),
             "Lenny": Lenny(),
+            "Perta": Perta(),
         }
         # Load from .env file OPENAI_API_KEY
         load_dotenv()
@@ -58,7 +59,8 @@ class AIRadioStation:
                 theme TEXT,
                 style TEXT,
                 lyrics TEXT,
-                twitter_post TEXT
+                twitter_post TEXT,
+                play_count INTEGER DEFAULT 0
             )
         """
         )
@@ -113,9 +115,11 @@ class AIRadioStation:
         self.cursor.execute("SELECT * FROM songs")
         songs = self.cursor.fetchall()
         for song in songs:
-            title, artist, file_path, theme, style, lyrics, twitter_post = song
+            title, artist, file_path, theme, style, lyrics, twitter_post, play_count = (
+                song
+            )
             self.music_library[title] = Song(
-                title, artist, file_path, theme, style, lyrics, twitter_post
+                title, artist, file_path, theme, style, lyrics, twitter_post, play_count
             )
 
         self.cursor.execute("SELECT * FROM commercials")
@@ -304,8 +308,8 @@ class AIRadioStation:
             self.music_library[song_info.title] = song_info
             self.cursor.execute(
                 """
-                INSERT OR REPLACE INTO songs (title, artist, file_path, theme, style, lyrics, twitter_post)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO songs (title, artist, file_path, theme, style, lyrics, twitter_post, play_count)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     song_info.title,
@@ -315,6 +319,7 @@ class AIRadioStation:
                     song_info.style,
                     song_info.lyrics,
                     song_info.twitter_post,
+                    song_info.play_count,
                 ),
             )
             self.conn.commit()
@@ -573,6 +578,17 @@ class AIRadioStation:
         while pygame.mixer.music.get_busy():
             pygame.time.Clock().tick(10)
 
+        # Increment play count if the audio is a song
+        for song in self.music_library.values():
+            if song.file_path == audio:
+                song.play_count += 1
+                self.cursor.execute(
+                    "UPDATE songs SET play_count = ? WHERE title = ?",
+                    (song.play_count, song.title),
+                )
+                self.conn.commit()
+                break
+
     def build_playlist(self):
         # Create a new SQLite connection and cursor for this thread
         conn = sqlite3.connect("musicflowradio.db")
@@ -584,10 +600,12 @@ class AIRadioStation:
                     len(self.playlist_queue) < 9
                 ):  # Ensure there are at least 3 songs in the queue
                     songs = list(self.music_library.values())
-                    random.shuffle(songs)
+                    songs.sort(
+                        key=lambda song: song.play_count
+                    )  # Sort songs by play count
                     selected_songs = []
                     while len(selected_songs) < 3:
-                        song = songs.pop()
+                        song = songs.pop(0)  # Select the least played song
                         if song not in selected_songs:
                             selected_songs.append(song)
                     for song in selected_songs:

@@ -11,15 +11,17 @@ class Song:
         style: str = None,
         lyrics: str = None,
         twitter_post: str = None,
+        play_count: int = 0,
     ):
         self.title = title
         self.artist = artist
         self.file_path = file_path
-        self.previous_intros: List[str] = []
         self.theme = theme
         self.style = style
         self.lyrics = lyrics
         self.twitter_post = twitter_post
+        self.play_count = play_count
+        self.previous_intros: List[str] = []
 
-    def __str__(self):
-        return f"Title: {self.title}, Artist: {self.artist}, Theme: {self.theme}, Style: {self.style}, Lyrics: {self.lyrics}, Twitter Post: {self.twitter_post}"
+    def __repr__(self):
+        return f"Song(title={self.title}, artist={self.artist}, play_count={self.play_count})"
