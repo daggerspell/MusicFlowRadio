@@ -9,6 +9,8 @@ from typing import List, Dict, Tuple
 from dotenv import load_dotenv
 import mutagen
 import re
+
+import requests
 from objects.Song import Song  # Import the Song class directly
 from objects.Commercial import Commercial
 from elevenlabs import Voice, VoiceSettings, save
@@ -48,6 +50,22 @@ class AIRadioStation:
         self.generate_host_schedule()
         self.current_host = self.get_current_host()
         self.generate_and_store_show_intros()
+        self.recent_songs = deque(maxlen=10)  # Keep track of the last 10 songs
+
+        # TODO: icecast server details HARD CODED FIXME!!!!
+        # Icecast streaming settings
+        self.icecast_url = "http://172.105.150.103:8000/stream"
+        self.icecast_auth = (
+            "source",
+            "Calvin54^",
+        )  # Replace "hackme" with your actual source password
+        self.headers = {
+            "Content-Type": "audio/mpeg",
+            "Ice-Public": "1",
+            "Ice-Name": "Dagger Spell FM",
+            "Ice-Description": "AI-powered internet streaming radio service",
+        }
+        self.stream_session = requests.Session()
 
     def create_tables(self):
         self.cursor.execute(
@@ -481,7 +499,7 @@ class AIRadioStation:
         # Generate a unique file name using the song name and a timestamp
         timestamp = int(time.time())
         intro_file_path = self.text_to_speech(
-            intro_text, f"intros/{song.title}_{timestamp}.mp3"
+            intro_text, f"intros/{song.title}_{timestamp}.mp3", current_host.voice_id
         )
         song.previous_intros.append((intro_text, intro_file_path, 0, current_host.name))
 
@@ -589,8 +607,42 @@ class AIRadioStation:
                 self.conn.commit()
                 break
 
+    def stream_audio(self, audio_file):
+        chunk_size = 4096
+
+        try:
+            with open(audio_file, "rb") as f:
+                response = self.stream_session.put(
+                    self.icecast_url,
+                    data=self._audio_generator(f, chunk_size),
+                    headers=self.headers,
+                    auth=self.icecast_auth,
+                    stream=True,
+                )
+                response.raise_for_status()
+        except requests.RequestException as e:
+            print(f"Streaming error: {e}")
+            # You might want to implement a retry mechanism here
+
+        # Increment play count if the audio is a song
+        for song in self.music_library.values():
+            if song.file_path == audio_file:
+                song.play_count += 1
+                self.cursor.execute(
+                    "UPDATE songs SET play_count = ? WHERE title = ?",
+                    (song.play_count, song.title),
+                )
+                self.conn.commit()
+                break
+
+    def _audio_generator(self, file, chunk_size):
+        while True:
+            chunk = file.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
     def build_playlist(self):
-        # Create a new SQLite connection and cursor for this thread
         conn = sqlite3.connect("musicflowradio.db")
         cursor = conn.cursor()
 
@@ -601,14 +653,18 @@ class AIRadioStation:
                 ):  # Ensure there are at least 3 songs in the queue
                     songs = list(self.music_library.values())
                     songs.sort(
-                        key=lambda song: song.play_count
-                    )  # Sort songs by play count
+                        key=lambda song: (song.play_count, random.random())
+                    )  # Sort by play count and add randomness
                     selected_songs = []
-                    while len(selected_songs) < 3:
-                        song = songs.pop(0)  # Select the least played song
-                        if song not in selected_songs:
+
+                    for song in songs:
+                        if song not in self.recent_songs and song not in selected_songs:
                             selected_songs.append(song)
+                            if len(selected_songs) == 3:
+                                break
+
                     for song in selected_songs:
+                        self.recent_songs.append(song)
                         include_dark_joke = (
                             random.random() < 0.2
                         )  # 20% chance for a dark joke
@@ -621,14 +677,16 @@ class AIRadioStation:
                         )
                         self.playlist_queue.append(intro_file_path)
                         self.playlist_queue.append(song.file_path)
+                        song.play_count += 1  # Increment play count
+
                         if (
                             len(self.commercials) > 0 and random.random() < 0.2
                         ):  # 20% chance for a commercial
                             commercial = random.choice(self.commercials)
                             self.playlist_queue.append(commercial.file_path)
+
             time.sleep(1)  # Sleep for a short time before checking the queue again
 
-        # Close the connection when done
         conn.close()
 
     def run_station(self):
@@ -644,5 +702,7 @@ class AIRadioStation:
                     audio = None
             if audio:
                 self.play_audio(audio)
-            # tenth of a second delay between songs
             time.sleep(0.01)
+
+    def __del__(self):
+        self.stream_session.close()
